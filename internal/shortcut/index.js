@@ -52,11 +52,6 @@ export async function linked (exec, key) {
   try { return JSON.parse(bytes.toString()) } catch (err) { throw new Error(`not a document: ${linkPath(key)}`, { cause: err }) }
 }
 
-// The mrepo registry: in the boot mrepo's main, a position: the mrepos of
-// the install, a node each by its unique URI (registry/local/host), for
-// administration and queries. There where main has the node `registry`.
-export const REGISTRY = 'registry'
-export const registryOf = uri => `${MAIN}/${REGISTRY}/${uri}`
 
 // The swarm of a unique URI: its first part; local when it has none (the
 // mrepos in no swarm: the boot mrepo, a host).

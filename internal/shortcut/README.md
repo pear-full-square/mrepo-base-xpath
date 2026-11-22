@@ -48,9 +48,6 @@ The shortcut as a command is sent on to it:
 - `LINKS`: `links`, the layer. `linkPath(key)`: a link's record there,
   `links/<key>.json`. `linked(exec, key)`: the record, `null` when
   there is none. `NODE`: `.node.json`.
-- `REGISTRY`: `registry`, the position of the mrepo registry in the
-  boot mrepo's `main`. `registryOf(uri)`: an mrepo's node there,
-  `main/registry/<unique URI>`, a path.
 - `IDENTITY`: `/runtime/mrepo.json`, an mrepo's own `{ uri }`.
 - `swarmOf(uri)`: the swarm of a unique URI, its first segment, `local`
   when it has none. `LOCAL`: `local`, the namespace of the mrepos in
