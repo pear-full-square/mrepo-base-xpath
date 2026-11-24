@@ -29,6 +29,11 @@ latest first; each found at its address, `<topic>/*[@offset=<offset>]`
 and what was asked after it. What is no topic reads the same either
 way.
 
+`readingOf(exec)`: the mrepo's setting, how its topics are read where a
+command says nothing: `/runtime/xpath.json`, `{ "reading": "logical" }`
+or `"physical"`, a runtime config of its defining package's; none:
+`undefined` (physical).
+
 ## Signature
 
 `query(exec, uri)`: `exec` reads the mrepo (`node`, `children`, `bytes`)

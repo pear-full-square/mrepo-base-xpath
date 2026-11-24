@@ -11,6 +11,16 @@ import { MAIN, SHORTCUTS, NODE, linkOf } from '../shortcut/index.js'
 // reading when none is said); 'logical': a topic as its records, how it is
 // stored hidden.
 export const CONFIG = '.layer.json'
+// An mrepo's setting for it: how its topics are read where a command says
+// nothing: its runtime config /runtime/xpath.json, { "reading": "logical" }
+// (its defining package's); none: physical.
+export const READING = '/runtime/xpath.json'
+export async function readingOf (exec) {
+  // catch: no setting, or none that reads: none
+  const bytes = await exec.find(READING).catch(() => null)
+  if (!bytes) return undefined
+  try { return JSON.parse(bytes.toString()).reading } catch { return undefined }
+}
 export async function query (exec, uri, { mode = 'physical' } = {}) {
   const whole = joined(segmented(uri))
   if (whole === ROOT) throw new Error('not a node: . (the mrepo itself; a layer first: main)')
