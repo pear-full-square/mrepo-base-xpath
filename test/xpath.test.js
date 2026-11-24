@@ -180,15 +180,14 @@ test('query: a topic read logically: its records, the latest first, by their add
   // what is no topic reads the same either way; the physical reading as before
   t.alike((await query(context(stored), ['request', 'pending/default/*'], { mode: 'logical' })).found.map(f => f.at), ['pending/default/1795400000009.json'], 'a plain tree: as it is, logical or not')
   t.alike((await query(context(stored), ['request', 'done/*'])).found.map(f => f.at), ['done/17953', 'done/17954'], 'physically: its folders')
-  // a position right on the records, an offset as an index: handed to the storage's generator
-  const latest = context(stored)
-  t.alike((await query(latest, ['request', 'done/*[last()]'], { mode: 'logical' })).found.map(f => f.at), ['done/*[@offset=1795400000003]'], 'the latest record')
-  t.alike((await query(context(stored), ['request', 'done/*[position()>last()-2]'], { mode: 'logical' })).found.map(f => f.at), ['done/*[@offset=1795400000003]', 'done/*[@offset=1795400000002]'], 'the latest two')
+  // an offset as an index: handed to the storage's generator
   const byOffset = context(stored)
   await query(byOffset, ['request', 'done/*[@offset=1795399999999]'], { mode: 'logical' })
   t.alike(byOffset.entries.filter(e => e.event === 'batch').map(e => e.physical), ['done/*[last()]/*[last()]/*[last()]', "done/17953/179539/*[name()='1795399999999.json']"], 'one record by its offset: what fixed the node set, then a scan of its folder; nothing else')
   t.alike((await query(context(stored), ['request', 'done/*[@offset>1795400000000]'], { mode: 'logical' })).found.length, 3, 'after a pointer')
-  await t.exception(query(context(stored), ['request', "done/*[value/value/protocol='crud'][last()]"], { mode: 'logical' }), /a position among a topic's records, here: not built yet/)
+  // a query says where, never how many: the reader of its result takes what it wants
+  await t.exception(query(context(stored), ['request', 'done/*[last()]'], { mode: 'logical' }), /a position is no part of a topic's query/)
+  t.alike((await (await result(context(stored), ['request', 'done/*'], { mode: 'logical' })).take(2)).map(f => f.at), ['done/*[@offset=1795400000003]', 'done/*[@offset=1795400000002]'], 'the latest two: taken from the result')
   // a topic that is its layer
   const inbox = { 'inbox/.layer.json': { mode: 'non-atomic', structure: { type: 'offset-files', levels: [5, 6] } }, 'inbox/17954/179540/1795400000000.json': record(1795400000000, 'crud') }
   t.alike((await query(context(inbox), ['inbox', '*'], { mode: 'logical' })).found.map(f => f.at), ['*[@offset=1795400000000]'], 'the layer itself the topic')
