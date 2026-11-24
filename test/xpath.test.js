@@ -125,3 +125,31 @@ test('query: hidden is the name\'s rule, a name starting with a dot; no name sin
   const found = (await query(exec, ['runtime', '*'])).found.map(f => [f.at, f.kind])
   t.alike(found, [['layer.json', 'file'], ['service.json', 'file']], 'a file named layer.json is data like any other; what starts with a dot is not selected, whatever it is')
 })
+
+test('query: a streaming layer read as it is stored: a batch by its folder, its positions and its names; no record opened', async (t) => {
+  // request/done as stored: a record a file named by its offset, in folders by its digits
+  const record = (offset, protocol) => ({ topic: '/request/done', offset, value: { topic: null, offset, value: { protocol, action: 'x' } } })
+  const stored = { 'request/done/.layer.json': { mode: 'non-atomic', stream: [5, 6] } }
+  const offsets = [1795312345678, 1795312345679, 1795312399999, 1795399999999, 1795400000000, 1795400000001, 1795400000002, 1795400000003]
+  offsets.forEach((o, i) => { stored[`request/done/${String(o).slice(0, 5)}/${String(o).slice(0, 6)}/${o}.json`] = record(o, i % 2 ? 'crud' : 'boot') })
+  const names = async uri => { const exec = context(stored); const r = await query(exec, ['request', uri]); return { at: r.found.map(f => f.at.slice(f.at.lastIndexOf('/') + 1)), read: exec.asked.bytes.filter(p => p.endsWith('.json') && !p.endsWith('.layer.json')) } }
+  t.alike((await names('done/*/*/*')).at, offsets.map(o => `${o}.json`), 'every record, in the order they arrived: its offsets')
+  // the latest folder, the latest of it
+  t.alike((await names('done/*[last()]/*[last()]/*')).at, ['1795400000000.json', '1795400000001.json', '1795400000002.json', '1795400000003.json'], 'the latest folder')
+  const latest = await names('done/*[last()]/*[last()]/*[position()>last()-2]')
+  t.alike(latest.at, ['1795400000002.json', '1795400000003.json'], 'a batch: the latest two of the latest folder')
+  t.alike(latest.read, [], 'by positions alone: no record opened')
+  // the batch before a point: by name, then by position
+  const before = await names("done/17954/179540/*[name()<'1795400000002'][position()>last()-2]")
+  t.alike(before.at, ['1795400000000.json', '1795400000001.json'], 'the two before an offset, in one folder: its name compared as text')
+  t.alike(before.read, [], 'by names and positions: no record opened')
+  t.alike((await names("done/17953/179531/*[name()>'1795312345678.json'][position()<=1]")).at, ['1795312345679.json'], 'the next after an offset: read forward')
+  t.alike((await names('done/*[position()<last()]/*/*')).at.length, 4, 'the folders before the latest')
+  // one record, by its offset: its place said by its digits
+  t.alike((await names('done/17953/179539/1795399999999.json')).at, ['1795399999999.json'], 'one record, by its offset')
+  // and by its data, where it has to be opened
+  const crud = await names("done/*/*/*[value/value/protocol='crud']")
+  t.alike([crud.at.length, crud.read.length], [4, 8], 'by its data: every record opened')
+  const bounded = await names("done/*[last()]/*[last()]/*[position()>last()-2][value/value/protocol='crud']")
+  t.alike([bounded.at, bounded.read.length], [['1795400000003.json'], 2], 'a batch first, then its data: only the batch opened')
+})
