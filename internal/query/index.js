@@ -39,20 +39,24 @@ export async function query (exec, uri, { mode = 'physical' } = {}) {
 // slices fetched by physical queries as the reading needs them, each in the
 // request's log, batch; each node at its logical address). How many a
 // reader takes is its own.
-// -> { layer, iterateNext(), take(n), all(), stopped(), nodeset(), xpath }
+// -> { layer, iterateNext(), take(n), slice(), all(), stopped(), nodeset(), xpath }
+//    slice()        the references of its next slice: what one answer carries
 //    iterateNext()  the next reference ({ at, kind, node | value,
 //                   shortcut? }), null at the end
 //    stopped()      where it stopped at a shortcut, so far
 //    nodeset()      its node set as data, its nodes left out
 // log: its batches, through exec.step (batch); query's own entry where all of it is read
-export async function result (exec, uri, { mode = 'physical' } = {}) {
+// (nodeset: a node set's data, from who holds it: the result goes on from
+// where that one has read to: its storage, its fixed offset and how far it
+// is read are the data's, nothing is looked up or fixed again)
+export async function result (exec, uri, { mode = 'physical', nodeset = null } = {}) {
   const whole = joined(segmented(uri))
   if (whole === ROOT) throw new Error('not a node: . (the mrepo itself; a layer first: main)')
   const [layer, ...steps] = stepsOf(whole)
   if (!isName(layer)) throw new Error(`not a layer: ${layer} (in ${whole}: a name first, without a filter)`)
   {
     const root = await exec.node(layer)
-    if (!root) return { layer, iterateNext: async () => null, take: async () => [], all: async () => [], stopped: () => [], nodeset: () => null, xpath: null }
+    if (!root) return { layer, iterateNext: async () => null, take: async () => [], slice: async () => [], all: async () => [], stopped: () => [], nodeset: () => null, xpath: null }
     // a folder's listing, asked once a query: its children, and what is
     // hidden in it (its document, its shortcuts)
     const listings = new WeakMap()
@@ -112,7 +116,9 @@ export async function result (exec, uri, { mode = 'physical' } = {}) {
     const run = text => select(tree, root, text)
     const observe = (event, fn) => exec.step('batch', r => ({ ...event, returned: r.found.length }), fn)
     let topic = null
-    if (mode === 'logical') {
+    if (nodeset) {
+      if (nodeset.logical?.query !== logical || nodeset.logical?.layer !== layer) throw new Error(`not this URI's node set: ${nodeset.logical?.layer}/${nodeset.logical?.query} (${whole})`)
+    } else if (mode === 'logical') {
       let [node, at] = [root, []]
       // (a folder, whatever holds it: a tree, a layer's branches)
       for (let i = 0; node && node.type !== 'blob'; i++) {
@@ -124,12 +130,13 @@ export async function result (exec, uri, { mode = 'physical' } = {}) {
       }
     }
     let fixed = null
-    if (topic) {
+    if (topic && !nodeset) {
       const latest = [topic.topic, ...Array(topic.levels.length + 1).fill('*[last()]')].filter(Boolean).join('/')
       const there = (await observe({ logical, mode, type: topic.type, from: null, physical: latest, fixes: true }, () => run(latest))).found[0]
       fixed = there ? Number(there.path.slice(there.path.lastIndexOf('/') + 1, -(topic.extension.length + 1))) : null
     }
-    const xpath = new XPathResult({ query: logical, mode: topic ? 'logical' : 'physical', layer }, { physical: topic ?? { type: 'tree' }, fixed, next, took, address: addressOf, run, observe })
+    // (its id: the request that makes it)
+    const xpath = new XPathResult({ query: logical, mode: topic ? 'logical' : 'physical', layer }, { physical: topic ?? { type: 'tree' }, fixed, id: exec.id ?? null, resume: nodeset, next, took, address: addressOf, run, observe })
     // a node found, as this mrepo's reference: where it is (its logical
     // address), what it is
     const refOf = async f => {
@@ -143,16 +150,19 @@ export async function result (exec, uri, { mode = 'physical' } = {}) {
     }
     const iterateNext = async () => { const f = await xpath.iterateNext(); return f === null ? null : refOf(f) }
     const take = async n => { const out = []; for (let ref; out.length < n && (ref = await iterateNext()) !== null;) out.push(ref); return out }
+    // one slice: what one answer carries
+    const slice = async () => Promise.all((await xpath.slice()).map(refOf))
     const set = xpath.nodeset
     return {
       layer,
       xpath,
       iterateNext,
       take,
+      slice,
       all: () => take(Infinity),
       stopped: () => set.stopped.map(s => ({ at: unslashed(s.path), rest: s.rest, shortcut: s.why })),
       // (the node set as data, its nodes left out: what was asked, how it was read)
-      nodeset: () => ({ logical: set.logical, fixed: set.fixed, reached: set.reached, physical: set.physical, done: set.done })
+      nodeset: () => xpath.metadata
     }
   }
 }
