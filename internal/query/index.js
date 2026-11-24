@@ -1,7 +1,7 @@
 // query: a request's URI resolved to what it selects in this mrepo, each a
 // reference, and where it stopped at a shortcut (README.md beside it).
-import { query as select, nodeset, reader } from 'mycelium-xpath'
-import { next, took } from 'mycelium-xpath-physical'
+import { query as select, XPathResult } from 'mycelium-xpath'
+import { next, took, addressOf } from 'mycelium-xpath-physical'
 import { segmented, joined, stepsOf, isName, unslashed, uriFormOf, ROOT } from 'mycelium-uri'
 import { MAIN, SHORTCUTS, NODE, linkOf } from '../shortcut/index.js'
 
@@ -23,14 +23,36 @@ export async function readingOf (exec) {
   // catch: a setting that does not read: none
   try { return JSON.parse(bytes.toString()).reading } catch { return undefined }
 }
+// What a request's URI selects, all of it: the result (below) read to its
+// end. -> { layer, found, stopped, nodeset }
 export async function query (exec, uri, { mode = 'physical' } = {}) {
+  return exec.step('query', r => ({ uri: joined(segmented(uri)), found: r.found.length, stopped: r.stopped.length }), async () => {
+    const r = await result(exec, uri, { mode })
+    const found = await r.all()
+    const set = r.nodeset()
+    return { layer: r.layer, found, stopped: r.stopped(), ...(set ? { nodeset: set } : {}) }
+  })
+}
+
+// A request's URI as its result: an iterator over what it selects in this
+// mrepo (mycelium-xpath's XPathResult under it: a node set, logical; its
+// slices fetched by physical queries as the reading needs them, each in the
+// request's log, batch; each node at its logical address). How many a
+// reader takes is its own.
+// -> { layer, iterateNext(), take(n), all(), stopped(), nodeset(), xpath }
+//    iterateNext()  the next reference ({ at, kind, node | value,
+//                   shortcut? }), null at the end
+//    stopped()      where it stopped at a shortcut, so far
+//    nodeset()      its node set as data, its nodes left out
+// log: its batches, through exec.step (batch); query's own entry where all of it is read
+export async function result (exec, uri, { mode = 'physical' } = {}) {
   const whole = joined(segmented(uri))
   if (whole === ROOT) throw new Error('not a node: . (the mrepo itself; a layer first: main)')
   const [layer, ...steps] = stepsOf(whole)
   if (!isName(layer)) throw new Error(`not a layer: ${layer} (in ${whole}: a name first, without a filter)`)
-  return exec.step('query', r => ({ uri: whole, found: r.found.length, stopped: r.stopped.length }), async () => {
+  {
     const root = await exec.node(layer)
-    if (!root) return { layer, found: [], stopped: [] }
+    if (!root) return { layer, iterateNext: async () => null, take: async () => [], all: async () => [], stopped: () => [], nodeset: () => null, xpath: null }
     // a folder's listing, asked once a query: its children, and what is
     // hidden in it (its document, its shortcuts)
     const listings = new WeakMap()
@@ -107,30 +129,30 @@ export async function query (exec, uri, { mode = 'physical' } = {}) {
       const there = (await observe({ logical, mode, type: topic.type, from: null, physical: latest, fixes: true }, () => run(latest))).found[0]
       fixed = there ? Number(there.path.slice(there.path.lastIndexOf('/') + 1, -(topic.extension.length + 1))) : null
     }
-    const set = nodeset({ query: logical, mode: topic ? 'logical' : 'physical', layer }, topic ?? { type: 'tree' }, fixed)
-    const reading = reader(set, { next, took, run, observe })
-    await reading.all()
-    const r = { found: set.nodes, stopped: set.stopped }
-    // a record's address, logically: <topic>/*[@offset=<offset>], and what
-    // of it was asked after: no folder of its storage, no file's name
-    const depth = topic ? (topic.topic ? topic.topic.split('/').length : 0) + topic.levels.length : 0
-    const addressOf = path => {
-      if (!topic) return unslashed(path)
-      const parts = unslashed(path).split('/')
-      const offset = Number(parts[depth].slice(0, -(topic.extension.length + 1)))
-      return [topic.topic, `*[@offset=${offset}]`, ...parts.slice(depth + 1)].filter(Boolean).join('/')
-    }
-    const found = []
-    for (const f of r.found) {
-      const at = addressOf(f.path)
-      if (!('node' in f)) { found.push({ at, kind: 'value', value: f.value }); continue }
-      if (f.node.type === 'blob') { found.push({ at, kind: 'file', node: f.node }); continue }
+    const xpath = new XPathResult({ query: logical, mode: topic ? 'logical' : 'physical', layer }, { physical: topic ?? { type: 'tree' }, fixed, next, took, address: addressOf, run, observe })
+    // a node found, as this mrepo's reference: where it is (its logical
+    // address), what it is
+    const refOf = async f => {
+      const at = unslashed(f.path)
+      if (!('node' in f)) return { at, kind: 'value', value: f.value }
+      if (f.node.type === 'blob') return { at, kind: 'file', node: f.node }
       // a folder is a node when it holds its document; a layer is one
-      const node = f.path === '/' || Boolean((await listing(f.node))?.some(([n, child]) => n === NODE && child.type === 'blob'))
-      const shortcut = await linkAt(f)
-      found.push({ at, kind: node ? 'node' : 'folder', node: f.node, ...(shortcut ? { shortcut } : {}) })
+      const node = f.stored === '/' || Boolean((await listing(f.node))?.some(([n, child]) => n === NODE && child.type === 'blob'))
+      const shortcut = await linkAt({ path: f.stored, node: f.node })
+      return { at, kind: node ? 'node' : 'folder', node: f.node, ...(shortcut ? { shortcut } : {}) }
     }
-    // (nodeset: the node set as data, its nodes left out: what was asked, how it was read)
-    return { layer, found, stopped: r.stopped.map(s => ({ at: unslashed(s.path), rest: s.rest, shortcut: s.why })), nodeset: { logical: set.logical, fixed: set.fixed, reached: set.reached, physical: set.physical, done: set.done } }
-  })
+    const iterateNext = async () => { const f = await xpath.iterateNext(); return f === null ? null : refOf(f) }
+    const take = async n => { const out = []; for (let ref; out.length < n && (ref = await iterateNext()) !== null;) out.push(ref); return out }
+    const set = xpath.nodeset
+    return {
+      layer,
+      xpath,
+      iterateNext,
+      take,
+      all: () => take(Infinity),
+      stopped: () => set.stopped.map(s => ({ at: unslashed(s.path), rest: s.rest, shortcut: s.why })),
+      // (the node set as data, its nodes left out: what was asked, how it was read)
+      nodeset: () => ({ logical: set.logical, fixed: set.fixed, reached: set.reached, physical: set.physical, done: set.done })
+    }
+  }
 }

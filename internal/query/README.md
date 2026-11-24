@@ -7,6 +7,18 @@ The URI is a query: plain names, `*`, filters. It is read by
 it the mrepo as a tree: what a node's document is, what is hidden, where
 a shortcut is.
 
+## The result
+
+`result(exec, uri, { mode })`: the URI's result as an iterator
+(`mycelium-xpath`'s `XPathResult` under it): `iterateNext()` the next
+reference (`{ at, kind, node | value, shortcut? }`, `at` its logical
+address), `null` at the end; `take(n)`, `all()`; `stopped()` where it
+stopped at a shortcut so far; `nodeset()` its node set as data. Its
+slices are fetched as the reading needs them, each in the request's log
+(`batch`); a reader that takes a few and stops costs the slices that
+took. `query` is `result` read to its end: `{ layer, found, stopped,
+nodeset }`, what every action gets today.
+
 ## The node set
 
 A query answers a node set (`mycelium-xpath`): logical, the request and

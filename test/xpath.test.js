@@ -1,7 +1,7 @@
 // A URI resolved on a context written here: its files by path, read as a
 // repository's tree would be.
 import test from 'brittle'
-import { query, NODE, shortcutOf, shortcutsAt, linkOf, linked, linkPath, swarmOf, namespaceOf, uriOf, IDENTITY, SHORTCUTS, LINKS, MAIN } from '../index.js'
+import { query, result, NODE, shortcutOf, shortcutsAt, linkOf, linked, linkPath, swarmOf, namespaceOf, uriOf, IDENTITY, SHORTCUTS, LINKS, MAIN } from '../index.js'
 
 // (an execution context standing in: the tree, a node its path here; a
 // file that may not be there; the log, kept; a step run as it is)
@@ -193,4 +193,27 @@ test('query: a topic read logically: its records, the latest first, by their add
   const inbox = { 'inbox/.layer.json': { mode: 'non-atomic', structure: { type: 'offset-files', levels: [5, 6] } }, 'inbox/17954/179540/1795400000000.json': record(1795400000000, 'crud') }
   t.alike((await query(context(inbox), ['inbox', '*'], { mode: 'logical' })).found.map(f => f.at), ['*[@offset=1795400000000]'], 'the layer itself the topic')
   t.alike((await query(context({ 'inbox/.layer.json': { structure: { type: 'offset-files', levels: [5, 6] } } }), ['inbox', '*'], { mode: 'logical' })).found, [], 'nothing in it: nothing')
+})
+
+test('result: a URI\'s result as an iterator: the next reference asked for, slices fetched under the hood, a reader takes what it wants', async (t) => {
+  const record = offset => ({ topic: '/request/done', offset, value: { topic: null, offset, value: { protocol: 'crud' } } })
+  const stored = { 'request/done/.layer.json': { mode: 'non-atomic', structure: { type: 'offset-files', levels: [5, 6], batch: 2 } } }
+  const offsets = [1795312345678, 1795399999999, 1795400000000, 1795400000001, 1795400000002]
+  for (const o of offsets) stored[`request/done/${String(o).slice(0, 5)}/${String(o).slice(0, 6)}/${o}.json`] = record(o)
+  const exec = context(stored)
+  const r = await result(exec, ['request', 'done/*'], { mode: 'logical' })
+  const batches = () => exec.entries.filter(e => e.event === 'batch' && !e.fixes).length
+  t.alike([r.layer, r.nodeset().reached, batches()], ['request', null, 0], 'made: fixed, nothing read, no slice fetched')
+  t.alike(await r.iterateNext(), { at: 'done/*[@offset=1795400000002]', kind: 'file', node: { type: 'blob', p: 'request/done/17954/179540/1795400000002.json' } }, 'the next reference: a record at its logical address, its file behind it')
+  t.is(batches(), 1, 'one slice fetched')
+  t.alike((await r.take(2)).map(f => f.at), ['done/*[@offset=1795400000001]', 'done/*[@offset=1795400000000]'], 'take(2): on, across a slice, under the hood')
+  t.is(r.nodeset().done, false, 'more there: not read, not fetched')
+  t.absent(exec.entries.some(e => e.event === 'batch' && String(e.physical).includes('179531')), 'the oldest folder not touched: two slices fetched, the reader stopped')
+  t.alike((await r.all()).map(f => f.at), ['done/*[@offset=1795399999999]', 'done/*[@offset=1795312345678]'], 'all(): what is left')
+  t.alike([await r.iterateNext(), r.nodeset().done], [null, true], 'at the end: null')
+  // a plain tree, and no such layer: the same object
+  const plain = await result(context(files()), ['main', 'swarms/*'])
+  t.alike([(await plain.iterateNext()).at, (await plain.all()).length], ['swarms/notes', 2], 'a plain tree: iterated the same way')
+  const none = await result(context(files()), ['help', 'x'])
+  t.alike([await none.iterateNext(), await none.all(), none.stopped()], [null, [], []], 'no such layer: nothing to iterate')
 })
