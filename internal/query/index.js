@@ -23,37 +23,27 @@ export async function readingOf (exec) {
   // catch: a setting that does not read: none
   try { return JSON.parse(bytes.toString()).reading } catch { return undefined }
 }
-// What a request's URI selects, all of it: the result (below) read to its
-// end. -> { layer, found, stopped, nodeset }
-export async function query (exec, uri, { mode = 'physical' } = {}) {
-  return exec.step('query', r => ({ uri: joined(segmented(uri)), found: r.found.length, stopped: r.stopped.length }), async () => {
-    const r = await result(exec, uri, { mode })
-    const found = await r.all()
-    const set = r.nodeset()
-    return { layer: r.layer, found, stopped: r.stopped(), ...(set ? { nodeset: set } : {}) }
-  })
-}
-
-// A request's URI as its result: an iterator over what it selects in this
+// query: a request's URI as its result, the one way an mrepo is queried:
+// an iterator over what it selects in this
 // mrepo (mycelium-xpath's XPathResult under it: a node set, logical; its
 // slices fetched by physical queries as the reading needs them, each in the
 // request's log, batch; each node at its logical address). How many a
 // reader takes is its own.
-// -> { layer, iterateNext(), take(n), all(), stopped(), nodeset(), xpath }
+// -> { layer, iterateNext(), take(n), all(), stopped(), metadata(), xpath }
 //    iterateNext()  the next reference ({ at, kind, node | value,
 //                   shortcut? }), null at the end
 //    stopped()      where it stopped at a shortcut, so far
-//    nodeset()      its node set as data, its nodes left out
-// log: its batches, through exec.step (batch); query's own entry where all of it is read
+//    metadata()     the result's: the logical query, its physical translation
+// log: query, when it is made (its URI, how it is read); its batches, through exec.step (batch)
 // (ascending: a topic read from its earliest on; when not said, from its latest back)
-export async function result (exec, uri, { mode = 'physical', ascending = false } = {}) {
+export async function query (exec, uri, { mode = 'physical', ascending = false } = {}) {
   const whole = joined(segmented(uri))
   if (whole === ROOT) throw new Error('not a node: . (the mrepo itself; a layer first: main)')
   const [layer, ...steps] = stepsOf(whole)
   if (!isName(layer)) throw new Error(`not a layer: ${layer} (in ${whole}: a name first, without a filter)`)
-  {
+  return exec.step('query', () => ({ uri: whole, mode }), async () => {
     const root = await exec.node(layer)
-    if (!root) return { layer, iterateNext: async () => null, take: async () => [], all: async () => [], stopped: () => [], nodeset: () => null, xpath: null }
+    if (!root) return { layer, iterateNext: async () => null, take: async () => [], all: async () => [], stopped: () => [], metadata: () => null, xpath: null }
     // a folder's listing, asked once a query: its children, and what is
     // hidden in it (its document, its shortcuts)
     const listings = new WeakMap()
@@ -153,7 +143,7 @@ export async function result (exec, uri, { mode = 'physical', ascending = false 
       all: () => take(Infinity),
       stopped: () => xpath.stopped.map(s => ({ at: unslashed(s.path), rest: s.rest, shortcut: s.why })),
       // (the node set as data, its nodes left out: what was asked, how it was read)
-      nodeset: () => xpath.metadata
+      metadata: () => xpath.metadata
     }
-  }
+  })
 }

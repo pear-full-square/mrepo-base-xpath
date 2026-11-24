@@ -9,17 +9,24 @@ a shortcut is.
 
 ## The result
 
-`result(exec, uri, { mode, ascending })`: the URI's result as an iterator
-(`mycelium-xpath`'s `XPathResult` and its `XPathIterator` under it): `iterateNext()` the next
-reference (`{ at, kind, node | value, shortcut? }`, `at` its logical
-address), `null` at the end; `take(n)`, `all()`; `stopped()` where it
-stopped at a shortcut so far; `nodeset()` the result's metadata. Its
-slices are fetched as the reading needs them, each in the request's log
-(`batch`); a reader that takes a few and stops costs the slices that
-took. `ascending`: a topic read from its
-earliest on, in the order its records arrived (an inbox after its
-pointer); when not said, from its latest back. `query` is `result` read to its end: `{ layer, found, stopped,
-nodeset }`, what every action gets today.
+`query(exec, uri, { mode, ascending })` is the one way an mrepo is
+queried: it hands back the URI's result, to be iterated
+(`mycelium-xpath`'s `XPathResult` and its `XPathIterator` under it).
+There is no second form that answers everything at once: who wants all
+of it reads the result to its end.
+
+- `iterateNext()`: the next reference (`{ at, kind, node | value,
+  shortcut? }`, `at` its logical address), `null` at the end;
+  `take(n)`; `all()`, what is left.
+- `stopped()`: where it stopped at a shortcut so far. `metadata()`: the
+  result's, the logical query and its physical translation. `layer`.
+- Its slices are fetched as the reading needs them, each in the
+  request's log (`batch`); a reader that takes a few and stops costs
+  the slices that took. The query itself is logged when its result is
+  made (`query`: its URI, how it is read).
+- `ascending`: a topic read from its earliest on, in the order its
+  records arrived (an inbox after its pointer); when not said, from its
+  latest back.
 
 ## The node set
 
@@ -30,10 +37,9 @@ it is stored and reported through the execution's step (`batch`: the
 logical query, from where, the physical query, how many came). A layer
 says its structure type in its `.layer.json` (`structure`); none: a
 plain tree (`tree`), its one physical query the logical one. Read to
-its end here: `found` is all of it; `nodeset` says it as data, its
-nodes left out.
+its end by who wants all of it; `metadata()` says the result as data.
 
-`query(exec, uri, { mode })`: `physical` (when none is said) reads the
+`mode`: `physical` (when none is said) reads the
 layer as it is stored. `logical` reads a topic as its records: the
 layer itself, or the first of the URI's plain leading names whose
 folder says a structure of records (`offset-files`); its node set fixed
@@ -50,16 +56,16 @@ or `"physical"`, a runtime config of its defining package's; none:
 
 ## Signature
 
-`query(exec, uri)`: `exec` reads the mrepo (`node`, `children`, `bytes`)
+`query(exec, uri, { mode, ascending })`: `exec` reads the mrepo (`node`, `children`, `bytes`)
 and measures (`step`); `uri` is its segments as a request's form holds
 it, the layer first in what they make together: `["main",
 "swarms/*[state='started']"]`, `["runtime/hooks"]`.
 
 ## Returns
 
-`{ layer, found, stopped }`.
+The result (above). Iterated:
 
-- `found`: what the URI selects, in the tree's order, each
+- each reference: what the URI selects, in the tree's order,
   `{ at, kind, ... }`. `at` is its position as written at the layer, `.`
   the layer itself. `kind` says what it is:
   - `node`: a folder holding its document (`.node.json`), or the layer;
@@ -67,11 +73,11 @@ it, the layer first in what they make together: `["main",
   - `folder`: a folder without a document.
   - `file`: a file.
   - `value`: something inside a document; `value` is it.
-- `stopped`: where the URI runs through a shortcut, each
+- `stopped()`: where the URI runs through a shortcut, each
   `{ at, rest, shortcut }`: `rest` is what is left of the URI, a URI for
   the mrepo linked there; `shortcut` as `linkOf` gives it.
 
-Nothing there, or no such layer: `found` is empty.
+Nothing there, or no such layer: nothing to iterate.
 
 ## Errors
 

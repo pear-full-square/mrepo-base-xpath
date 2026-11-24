@@ -1,7 +1,7 @@
 // A URI resolved on a context written here: its files by path, read as a
 // repository's tree would be.
 import test from 'brittle'
-import { query, result, NODE, shortcutOf, shortcutsAt, linkOf, linked, linkPath, swarmOf, namespaceOf, uriOf, IDENTITY, SHORTCUTS, LINKS, MAIN } from '../index.js'
+import { query as result, NODE, shortcutOf, shortcutsAt, linkOf, linked, linkPath, swarmOf, namespaceOf, uriOf, IDENTITY, SHORTCUTS, LINKS, MAIN } from '../index.js'
 
 // (an execution context standing in: the tree, a node its path here; a
 // file that may not be there; the log, kept; a step run as it is)
@@ -21,6 +21,8 @@ function context (files, dir = '/work/mrepos/boot') {
   }
   return exec
 }
+// a query's result read to its end: what it selects, where it stopped, its metadata
+const query = async (exec, uri, opts) => { const r = await result(exec, uri, opts); const found = await r.all(); const nodeset = r.metadata(); return { layer: r.layer, found, stopped: r.stopped(), ...(nodeset ? { nodeset } : {}) } }
 const files = () => ({
   'main/.layer.json': {},
   'main/.node.json': { name: 'boot' },
@@ -100,9 +102,9 @@ test('query: a shortcut: found as one, and where the URI stops', async (t) => {
 test('query: measured: its rounds through the context\'s step; a listing asked once', async (t) => {
   const exec = context(files())
   await query(exec, ['main', "swarms/*[state='started']/nodes/*"])
-  t.alike(exec.entries.map(e => [e.event, e.in, e.out]), [['segment', 1, 3], ['filter', 3, 1], ['segment', 1, 1], ['batch', undefined, undefined], ['query', undefined, undefined]])
-  t.alike(exec.entries.at(-2), { level: 'verbose', event: 'batch', logical: "swarms/*[state='started']/nodes/*", mode: 'physical', type: 'tree', from: null, physical: "swarms/*[state='started']/nodes/*", returned: 1 }, 'the node set\'s batch: the physical query that fetched it, a plain tree\'s the logical one')
-  t.alike(exec.entries.at(-1), { level: 'verbose', event: 'query', uri: "main/swarms/*[state='started']/nodes/*", found: 1, stopped: 0 })
+  t.alike(exec.entries.map(e => [e.event, e.in, e.out]), [['query', undefined, undefined], ['segment', 1, 3], ['filter', 3, 1], ['segment', 1, 1], ['batch', undefined, undefined]])
+  t.alike(exec.entries.at(-1), { level: 'verbose', event: 'batch', logical: "swarms/*[state='started']/nodes/*", mode: 'physical', type: 'tree', from: null, physical: "swarms/*[state='started']/nodes/*", returned: 1 }, 'the node set\'s batch: the physical query that fetched it, a plain tree\'s the logical one')
+  t.alike(exec.entries[0], { level: 'verbose', event: 'query', uri: "main/swarms/*[state='started']/nodes/*", mode: 'physical' }, 'the query, when its result is made: its URI, how it is read; what it fetches follows, as it is read')
   t.alike(exec.asked.bytes.filter(p => p.endsWith(NODE)).sort(), ['main/swarms/swarm-1/.node.json', 'main/swarms/swarm-2/.node.json'], 'the documents of the nodes filtered, each once')
   t.is(MAIN, 'main')
 })
@@ -203,18 +205,18 @@ test('result: a URI\'s result as an iterator: the next reference asked for, slic
   const exec = context(stored)
   const r = await result(exec, ['request', 'done/*'], { mode: 'logical' })
   const batches = () => exec.entries.filter(e => e.event === 'batch' && !e.fixes).length
-  t.alike([r.layer, r.nodeset().reached, batches()], ['request', null, 0], 'made: fixed, nothing read, no slice fetched')
+  t.alike([r.layer, r.metadata().reached, batches()], ['request', null, 0], 'made: fixed, nothing read, no slice fetched')
   t.alike(await r.iterateNext(), { at: 'done/*[@offset=1795400000002]', kind: 'file', node: { type: 'blob', p: 'request/done/17954/179540/1795400000002.json' } }, 'the next reference: a record at its logical address, its file behind it')
   t.is(batches(), 1, 'one slice fetched')
   t.alike((await r.take(2)).map(f => f.at), ['done/*[@offset=1795400000001]', 'done/*[@offset=1795400000000]'], 'take(2): on, across a slice, under the hood')
-  t.is(r.nodeset().done, false, 'more there: not read, not fetched')
+  t.is(r.metadata().done, false, 'more there: not read, not fetched')
   t.absent(exec.entries.some(e => e.event === 'batch' && String(e.physical).includes('179531')), 'the oldest folder not touched: two slices fetched, the reader stopped')
   t.alike((await r.all()).map(f => f.at), ['done/*[@offset=1795399999999]', 'done/*[@offset=1795312345678]'], 'all(): what is left')
-  t.alike([await r.iterateNext(), r.nodeset().done], [null, true], 'at the end: null')
+  t.alike([await r.iterateNext(), r.metadata().done], [null, true], 'at the end: null')
   // ascending: the same topic from its earliest on; from a pointer on
   const up = await result(context(stored), ['request', 'done/*[@offset>1795399999999]'], { mode: 'logical', ascending: true })
   t.alike((await up.all()).map(f => f.at), ['done/*[@offset=1795400000000]', 'done/*[@offset=1795400000001]', 'done/*[@offset=1795400000002]'], 'ascending, after a pointer: what arrived since, in the order it arrived')
-  t.is(up.nodeset().logical.ascending, true, 'its direction in its metadata')
+  t.is(up.metadata().logical.ascending, true, 'its direction in its metadata')
   // a plain tree, and no such layer: the same object
   const plain = await result(context(files()), ['main', 'swarms/*'])
   t.alike([(await plain.iterateNext()).at, (await plain.all()).length], ['swarms/notes', 2], 'a plain tree: iterated the same way')
