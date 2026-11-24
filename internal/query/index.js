@@ -7,7 +7,11 @@ import { MAIN, SHORTCUTS, NODE, linkOf } from '../shortcut/index.js'
 
 // uri: as a request's form holds it, its segments, the layer first in what
 // they make together: ['main', "swarms/*[state='started']"], ['runtime/hooks'].
-export async function query (exec, uri) {
+// mode: how the URI is read: 'physical', as its layer is stored (the
+// reading when none is said); 'logical': a topic as its records, how it is
+// stored hidden.
+export const CONFIG = '.layer.json'
+export async function query (exec, uri, { mode = 'physical' } = {}) {
   const whole = joined(segmented(uri))
   if (whole === ROOT) throw new Error('not a node: . (the mrepo itself; a layer first: main)')
   const [layer, ...steps] = stepsOf(whole)
@@ -65,18 +69,48 @@ export async function query (exec, uri) {
     // stored), each seen in the request's log (batch). A layer's
     // structure type: a plain tree, read as it is: logical = physical.
     // Read to its end here: every action gets all of it.
-    const set = nodeset({ query: steps.join('/'), mode: 'physical', layer }, { type: 'tree' })
-    const reading = reader(set, {
-      next,
-      took,
-      run: text => select(tree, root, text),
-      observe: (event, fn) => exec.step('batch', r => ({ ...event, returned: r.found.length }), fn)
-    })
+    // Read logically, a topic: the layer itself or the first of the URI's
+    // plain leading names whose folder says a structure of records (its
+    // config, the physical side's file). Its node set is fixed by the
+    // topic's latest offset now (one physical query, seen as a batch is),
+    // and its batches come from that structure's generator.
+    const logical = steps.join('/')
+    const run = text => select(tree, root, text)
+    const observe = (event, fn) => exec.step('batch', r => ({ ...event, returned: r.found.length }), fn)
+    let topic = null
+    if (mode === 'logical') {
+      let [node, at] = [root, []]
+      // (a folder, whatever holds it: a tree, a layer's branches)
+      for (let i = 0; node && node.type !== 'blob'; i++) {
+        const structure = (await hidden(node, CONFIG, `/${at.join('/')}`))?.structure
+        if (structure?.type === 'offset-files') { topic = { levels: [5, 6], batch: 50, ...structure, topic: at.join('/'), extension: 'json' }; break }
+        if (i >= steps.length || !isName(steps[i])) break
+        node = (await listing(node))?.find(([n]) => n === steps[i])?.[1] ?? null
+        at = [...at, steps[i]]
+      }
+    }
+    let fixed = null
+    if (topic) {
+      const latest = [topic.topic, ...Array(topic.levels.length + 1).fill('*[last()]')].filter(Boolean).join('/')
+      const there = (await observe({ logical, mode, type: topic.type, from: null, physical: latest, fixes: true }, () => run(latest))).found[0]
+      fixed = there ? Number(there.path.slice(there.path.lastIndexOf('/') + 1, -(topic.extension.length + 1))) : null
+    }
+    const set = nodeset({ query: logical, mode: topic ? 'logical' : 'physical', layer }, topic ?? { type: 'tree' }, fixed)
+    const reading = reader(set, { next, took, run, observe })
     await reading.all()
     const r = { found: set.nodes, stopped: set.stopped }
+    // a record's address, logically: <topic>/*[@offset=<offset>], and what
+    // of it was asked after: no folder of its storage, no file's name
+    const depth = topic ? (topic.topic ? topic.topic.split('/').length : 0) + topic.levels.length : 0
+    const addressOf = path => {
+      if (!topic) return unslashed(path)
+      const parts = unslashed(path).split('/')
+      const offset = Number(parts[depth].slice(0, -(topic.extension.length + 1)))
+      return [topic.topic, `*[@offset=${offset}]`, ...parts.slice(depth + 1)].filter(Boolean).join('/')
+    }
     const found = []
     for (const f of r.found) {
-      const at = unslashed(f.path)
+      const at = addressOf(f.path)
       if (!('node' in f)) { found.push({ at, kind: 'value', value: f.value }); continue }
       if (f.node.type === 'blob') { found.push({ at, kind: 'file', node: f.node }); continue }
       // a folder is a node when it holds its document; a layer is one

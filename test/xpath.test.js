@@ -11,7 +11,8 @@ function context (files, dir = '/work/mrepos/boot') {
   const exec = {
     runtime: { dir },
     asked,
-    node: async u => (kind(u) ? { type: kind(u), p: u } : null),
+    // (a layer's root: its branches, as a running mrepo gives it; below it trees)
+    node: async u => (kind(u) ? { type: kind(u) === 'tree' && !u.includes('/') ? 'branches' : kind(u), p: u } : null),
     children: async n => { asked.children++; return n.type === 'blob' ? null : [...new Set(Object.keys(files).filter(f => f.startsWith(n.p + '/')).map(f => f.slice(n.p.length + 1).split('/')[0]))].sort().map(name => [name, { type: kind(`${n.p}/${name}`), p: `${n.p}/${name}` }]) },
     bytes: async n => { asked.bytes.push(n.p); return Buffer.from(typeof files[n.p] === 'string' ? files[n.p] : JSON.stringify(files[n.p])) },
     find: async p => (p in files ? Buffer.from(JSON.stringify(files[p])) : null),
@@ -130,7 +131,7 @@ test('query: hidden is the name\'s rule, a name starting with a dot; no name sin
 test('query: a streaming layer read as it is stored: a batch by its folder, its positions and its names; no record opened', async (t) => {
   // request/done as stored: a record a file named by its offset, in folders by its digits
   const record = (offset, protocol) => ({ topic: '/request/done', offset, value: { topic: null, offset, value: { protocol, action: 'x' } } })
-  const stored = { 'request/done/.layer.json': { mode: 'non-atomic', stream: [5, 6] } }
+  const stored = { 'request/done/.layer.json': { mode: 'non-atomic', structure: { type: 'offset-files', levels: [5, 6], batch: 50 } } }
   const offsets = [1795312345678, 1795312345679, 1795312399999, 1795399999999, 1795400000000, 1795400000001, 1795400000002, 1795400000003]
   offsets.forEach((o, i) => { stored[`request/done/${String(o).slice(0, 5)}/${String(o).slice(0, 6)}/${o}.json`] = record(o, i % 2 ? 'crud' : 'boot') })
   const names = async uri => { const exec = context(stored); const r = await query(exec, ['request', uri]); return { at: r.found.map(f => f.at.slice(f.at.lastIndexOf('/') + 1)), read: exec.asked.bytes.filter(p => p.endsWith('.json') && !p.endsWith('.layer.json')) } }
@@ -153,4 +154,35 @@ test('query: a streaming layer read as it is stored: a batch by its folder, its 
   t.alike([crud.at.length, crud.read.length], [4, 8], 'by its data: every record opened')
   const bounded = await names("done/*[last()]/*[last()]/*[position()>last()-2][value/value/protocol='crud']")
   t.alike([bounded.at, bounded.read.length], [['1795400000003.json'], 2], 'a batch first, then its data: only the batch opened')
+})
+
+test('query: a topic read logically: its records, the latest first, by their addresses; how it is stored hidden, its physical queries in the log', async (t) => {
+  const record = (offset, protocol) => ({ topic: '/request/done', offset, value: { topic: null, offset, value: { protocol, action: 'x' } } })
+  const stored = { 'request/done/.layer.json': { mode: 'non-atomic', structure: { type: 'offset-files', levels: [5, 6], batch: 3 } }, 'request/pending/default/.layer.json': { mode: 'non-atomic' }, 'request/pending/default/1795400000009.json': record(1795400000009, 'crud') }
+  const offsets = [1795312345678, 1795312345679, 1795312399999, 1795399999999, 1795400000000, 1795400000001, 1795400000002, 1795400000003]
+  offsets.forEach((o, i) => { stored[`request/done/${String(o).slice(0, 5)}/${String(o).slice(0, 6)}/${o}.json`] = record(o, i % 2 ? 'crud' : 'boot') })
+  const exec = context(stored)
+  const all = await query(exec, ['request', 'done/*'], { mode: 'logical' })
+  t.alike(all.found.map(f => f.at), [...offsets].reverse().map(o => `done/*[@offset=${o}]`), 'every record, from the latest back, each by its address: no folder of its storage, no file\'s name')
+  t.ok(all.found.every(f => f.kind === 'file' && f.node.type === 'blob'), 'each a record: its file behind it')
+  t.alike(all.nodeset, { logical: { query: 'done/*', mode: 'logical', layer: 'request' }, fixed: 1795400000003, reached: 'end', physical: { levels: [5, 6], batch: 3, type: 'offset-files', topic: 'done', extension: 'json' }, done: true }, 'its node set: the request, fixed at the latest offset, its storage')
+  const batches = exec.entries.filter(e => e.event === 'batch')
+  t.alike(batches.slice(0, 2).map(e => [e.physical, e.returned, e.fixes ?? false]), [['done/*[last()]/*[last()]/*[last()]', 1, true], ["done/17954/179540/*[name()<='1795400000003.json'][position()>last()-3]", 3, false]], 'its physical queries in the log: what fixed it, then its batches')
+  t.ok(batches.every(e => e.logical === 'done/*' && e.mode === 'logical' && e.type === 'offset-files'), 'each with the logical query it stood for')
+  t.alike(exec.asked.bytes.filter(p => /\/\d{13}\.json$/.test(p)), [], 'no record opened to list them')
+  // what is asked of the records: their data, a path into them, their own offset
+  const crud = await query(context(stored), ['request', "done/*[value/value/protocol='crud']"], { mode: 'logical' })
+  t.alike(crud.found.map(f => f.at), [1795400000003, 1795400000001, 1795399999999, 1795312345679].map(o => `done/*[@offset=${o}]`), 'by their data')
+  const one = await query(context(stored), ['request', 'done/*[@offset=1795399999999]'], { mode: 'logical' })
+  t.alike(one.found.map(f => f.at), ['done/*[@offset=1795399999999]'], 'a record by its address, as an answer says it: read back')
+  const value = await query(context(stored), ['request', 'done/*[@offset=1795399999999]/value/value/protocol'], { mode: 'logical' })
+  t.alike(value.found, [{ at: 'done/*[@offset=1795399999999]/value/value/protocol', kind: 'value', value: 'crud' }], 'a field of it')
+  // what is no topic reads the same either way; the physical reading as before
+  t.alike((await query(context(stored), ['request', 'pending/default/*'], { mode: 'logical' })).found.map(f => f.at), ['pending/default/1795400000009.json'], 'a plain tree: as it is, logical or not')
+  t.alike((await query(context(stored), ['request', 'done/*'])).found.map(f => f.at), ['done/17953', 'done/17954'], 'physically: its folders')
+  await t.exception(query(context(stored), ['request', 'done/*[last()]'], { mode: 'logical' }), /a position among a topic's records is not built yet/)
+  // a topic that is its layer
+  const inbox = { 'inbox/.layer.json': { mode: 'non-atomic', structure: { type: 'offset-files', levels: [5, 6] } }, 'inbox/17954/179540/1795400000000.json': record(1795400000000, 'crud') }
+  t.alike((await query(context(inbox), ['inbox', '*'], { mode: 'logical' })).found.map(f => f.at), ['*[@offset=1795400000000]'], 'the layer itself the topic')
+  t.alike((await query(context({ 'inbox/.layer.json': { structure: { type: 'offset-files', levels: [5, 6] } } }), ['inbox', '*'], { mode: 'logical' })).found, [], 'nothing in it: nothing')
 })

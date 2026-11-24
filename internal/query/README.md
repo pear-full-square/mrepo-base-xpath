@@ -14,9 +14,20 @@ its storage's structure type; its data loaded a batch at a time, each by
 a physical query from `mycelium-xpath-physical`, executed on the tree as
 it is stored and reported through the execution's step (`batch`: the
 logical query, from where, the physical query, how many came). A layer
-is a plain tree today (`tree`): its one physical query is the logical
-one, logical = physical. Read to its end here: `found` is all of it;
-`nodeset` says it as data, its nodes left out.
+says its structure type in its `.layer.json` (`structure`); none: a
+plain tree (`tree`), its one physical query the logical one. Read to
+its end here: `found` is all of it; `nodeset` says it as data, its
+nodes left out.
+
+`query(exec, uri, { mode })`: `physical` (when none is said) reads the
+layer as it is stored. `logical` reads a topic as its records: the
+layer itself, or the first of the URI's plain leading names whose
+folder says a structure of records (`offset-files`); its node set fixed
+by the topic's latest offset now (one physical query, logged as a batch
+is, `fixes: true`), its batches from that structure's generator, the
+latest first; each found at its address, `<topic>/*[@offset=<offset>]`
+and what was asked after it. What is no topic reads the same either
+way.
 
 ## Signature
 
