@@ -1,6 +1,7 @@
 // query: a request's URI resolved to what it selects in this mrepo, each a
 // reference, and where it stopped at a shortcut (README.md beside it).
-import { query as select } from 'mycelium-xpath'
+import { query as select, nodeset, reader } from 'mycelium-xpath'
+import { next, took } from 'mycelium-xpath-physical'
 import { segmented, joined, stepsOf, isName, unslashed, uriFormOf, ROOT } from 'mycelium-uri'
 import { MAIN, SHORTCUTS, NODE, linkOf } from '../shortcut/index.js'
 
@@ -57,7 +58,22 @@ export async function query (exec, uri) {
       name: uriFormOf,
       step: (event, data, fn) => exec.step(event, data, fn)
     }
-    const r = await select(tree, root, steps.join('/'))
+    // what the query answers: a node set (mycelium-xpath), logical: the
+    // request, its storage's structure type; its data loaded a batch at a
+    // time, each by a physical query (mycelium-xpath-physical gives its
+    // text from the node set, the engine executes it on the tree as it is
+    // stored), each seen in the request's log (batch). A layer's
+    // structure type: a plain tree, read as it is: logical = physical.
+    // Read to its end here: every action gets all of it.
+    const set = nodeset({ query: steps.join('/'), mode: 'physical', layer }, { type: 'tree' })
+    const reading = reader(set, {
+      next,
+      took,
+      run: text => select(tree, root, text),
+      observe: (event, fn) => exec.step('batch', r => ({ ...event, returned: r.found.length }), fn)
+    })
+    await reading.all()
+    const r = { found: set.nodes, stopped: set.stopped }
     const found = []
     for (const f of r.found) {
       const at = unslashed(f.path)
@@ -68,6 +84,7 @@ export async function query (exec, uri) {
       const shortcut = await linkAt(f)
       found.push({ at, kind: node ? 'node' : 'folder', node: f.node, ...(shortcut ? { shortcut } : {}) })
     }
-    return { layer, found, stopped: r.stopped.map(s => ({ at: unslashed(s.path), rest: s.rest, shortcut: s.why })) }
+    // (nodeset: the node set as data, its nodes left out: what was asked, how it was read)
+    return { layer, found, stopped: r.stopped.map(s => ({ at: unslashed(s.path), rest: s.rest, shortcut: s.why })), nodeset: { logical: set.logical, fixed: set.fixed, reached: set.reached, physical: set.physical, done: set.done } }
   })
 }

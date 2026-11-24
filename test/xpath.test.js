@@ -83,7 +83,7 @@ test('query: filters read the documents', async (t) => {
 test('query: a shortcut: found as one, and where the URI stops', async (t) => {
   const exec = context(files())
   t.alike((await query(exec, ['main', 'host'])).found, [{ at: 'host', kind: 'node', node: { type: 'tree', p: 'main/host' }, shortcut: HOST }], 'the shortcut itself: its first source, and where it leads on this machine, read from its link\'s record')
-  t.alike(await query(exec, ['main', 'host/swarms/*']), { layer: 'main', found: [], stopped: [{ at: 'host', rest: 'swarms/*', shortcut: HOST }] }, 'a URI through it: stopped there, with what is left')
+  t.alike(await query(exec, ['main', 'host/swarms/*']), { layer: 'main', found: [], stopped: [{ at: 'host', rest: 'swarms/*', shortcut: HOST }], nodeset: { logical: { query: 'host/swarms/*', mode: 'physical', layer: 'main' }, fixed: null, reached: 'end', physical: { type: 'tree' }, done: true } }, 'a URI through it: stopped there, with what is left; its node set said: what was asked, how it was read')
   t.alike((await query(exec, ['main', "host[state='started']/x"])).stopped.map(s => s.rest), ["[state='started']/x"], 'a filter on it goes with it: its document is elsewhere')
   const all = await query(exec, ['main', '*/*'])
   t.alike([at(all), all.stopped.map(s => [s.at, s.rest])], [[['records/local', 'node'], ['swarms/notes', 'folder'], ['swarms/swarm-1', 'node'], ['swarms/swarm-2', 'node']], [['host', '*']]], 'beside ordinary nodes: both said')
@@ -99,7 +99,8 @@ test('query: a shortcut: found as one, and where the URI stops', async (t) => {
 test('query: measured: its rounds through the context\'s step; a listing asked once', async (t) => {
   const exec = context(files())
   await query(exec, ['main', "swarms/*[state='started']/nodes/*"])
-  t.alike(exec.entries.map(e => [e.event, e.in, e.out]), [['segment', 1, 3], ['filter', 3, 1], ['segment', 1, 1], ['query', undefined, undefined]])
+  t.alike(exec.entries.map(e => [e.event, e.in, e.out]), [['segment', 1, 3], ['filter', 3, 1], ['segment', 1, 1], ['batch', undefined, undefined], ['query', undefined, undefined]])
+  t.alike(exec.entries.at(-2), { level: 'verbose', event: 'batch', logical: "swarms/*[state='started']/nodes/*", mode: 'physical', type: 'tree', from: null, physical: "swarms/*[state='started']/nodes/*", returned: 1 }, 'the node set\'s batch: the physical query that fetched it, a plain tree\'s the logical one')
   t.alike(exec.entries.at(-1), { level: 'verbose', event: 'query', uri: "main/swarms/*[state='started']/nodes/*", found: 1, stopped: 0 })
   t.alike(exec.asked.bytes.filter(p => p.endsWith(NODE)).sort(), ['main/swarms/swarm-1/.node.json', 'main/swarms/swarm-2/.node.json'], 'the documents of the nodes filtered, each once')
   t.is(MAIN, 'main')

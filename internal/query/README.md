@@ -7,6 +7,17 @@ The URI is a query: plain names, `*`, filters. It is read by
 it the mrepo as a tree: what a node's document is, what is hidden, where
 a shortcut is.
 
+## The node set
+
+A query answers a node set (`mycelium-xpath`): logical, the request and
+its storage's structure type; its data loaded a batch at a time, each by
+a physical query from `mycelium-xpath-physical`, executed on the tree as
+it is stored and reported through the execution's step (`batch`: the
+logical query, from where, the physical query, how many came). A layer
+is a plain tree today (`tree`): its one physical query is the logical
+one, logical = physical. Read to its end here: `found` is all of it;
+`nodeset` says it as data, its nodes left out.
+
 ## Signature
 
 `query(exec, uri)`: `exec` reads the mrepo (`node`, `children`, `bytes`)
