@@ -15,10 +15,12 @@ export const CONFIG = '.layer.json'
 // nothing: its runtime config /runtime/xpath.json, { "reading": "logical" }
 // (its defining package's); none: physical.
 export const READING = '/runtime/xpath.json'
+// log: none (one read of a setting; the query it is for says how it was read: batch, mode)
 export async function readingOf (exec) {
-  // catch: no setting, or none that reads: none
+  // catch: no setting there: none
   const bytes = await exec.find(READING).catch(() => null)
   if (!bytes) return undefined
+  // catch: a setting that does not read: none
   try { return JSON.parse(bytes.toString()).reading } catch { return undefined }
 }
 export async function query (exec, uri, { mode = 'physical' } = {}) {
