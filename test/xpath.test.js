@@ -211,6 +211,10 @@ test('result: a URI\'s result as an iterator: the next reference asked for, slic
   t.absent(exec.entries.some(e => e.event === 'batch' && String(e.physical).includes('179531')), 'the oldest folder not touched: two slices fetched, the reader stopped')
   t.alike((await r.all()).map(f => f.at), ['done/*[@offset=1795399999999]', 'done/*[@offset=1795312345678]'], 'all(): what is left')
   t.alike([await r.iterateNext(), r.nodeset().done], [null, true], 'at the end: null')
+  // ascending: the same topic from its earliest on; from a pointer on
+  const up = await result(context(stored), ['request', 'done/*[@offset>1795399999999]'], { mode: 'logical', ascending: true })
+  t.alike((await up.all()).map(f => f.at), ['done/*[@offset=1795400000000]', 'done/*[@offset=1795400000001]', 'done/*[@offset=1795400000002]'], 'ascending, after a pointer: what arrived since, in the order it arrived')
+  t.is(up.nodeset().logical.ascending, true, 'its direction in its metadata')
   // a plain tree, and no such layer: the same object
   const plain = await result(context(files()), ['main', 'swarms/*'])
   t.alike([(await plain.iterateNext()).at, (await plain.all()).length], ['swarms/notes', 2], 'a plain tree: iterated the same way')

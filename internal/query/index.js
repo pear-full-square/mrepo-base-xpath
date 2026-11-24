@@ -45,7 +45,8 @@ export async function query (exec, uri, { mode = 'physical' } = {}) {
 //    stopped()      where it stopped at a shortcut, so far
 //    nodeset()      its node set as data, its nodes left out
 // log: its batches, through exec.step (batch); query's own entry where all of it is read
-export async function result (exec, uri, { mode = 'physical' } = {}) {
+// (ascending: a topic read from its earliest on; when not said, from its latest back)
+export async function result (exec, uri, { mode = 'physical', ascending = false } = {}) {
   const whole = joined(segmented(uri))
   if (whole === ROOT) throw new Error('not a node: . (the mrepo itself; a layer first: main)')
   const [layer, ...steps] = stepsOf(whole)
@@ -129,7 +130,7 @@ export async function result (exec, uri, { mode = 'physical' } = {}) {
       const there = (await observe({ logical, mode, type: topic.type, from: null, physical: latest, fixes: true }, () => run(latest))).found[0]
       fixed = there ? Number(there.path.slice(there.path.lastIndexOf('/') + 1, -(topic.extension.length + 1))) : null
     }
-    const xpath = new XPathResult({ query: logical, mode: topic ? 'logical' : 'physical', layer }, { physical: topic ?? { type: 'tree' }, fixed, next, took, address: addressOf, run, observe })
+    const xpath = new XPathResult({ query: logical, mode: topic ? 'logical' : 'physical', layer, ascending: Boolean(topic) && ascending }, { physical: topic ?? { type: 'tree' }, fixed, next, took, address: addressOf, run, observe })
     // a node found, as this mrepo's reference: where it is (its logical
     // address), what it is
     const refOf = async f => {

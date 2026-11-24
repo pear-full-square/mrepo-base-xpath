@@ -9,14 +9,16 @@ a shortcut is.
 
 ## The result
 
-`result(exec, uri, { mode })`: the URI's result as an iterator
+`result(exec, uri, { mode, ascending })`: the URI's result as an iterator
 (`mycelium-xpath`'s `XPathResult` and its `XPathIterator` under it): `iterateNext()` the next
 reference (`{ at, kind, node | value, shortcut? }`, `at` its logical
 address), `null` at the end; `take(n)`, `all()`; `stopped()` where it
 stopped at a shortcut so far; `nodeset()` the result's metadata. Its
 slices are fetched as the reading needs them, each in the request's log
 (`batch`); a reader that takes a few and stops costs the slices that
-took. `query` is `result` read to its end: `{ layer, found, stopped,
+took. `ascending`: a topic read from its
+earliest on, in the order its records arrived (an inbox after its
+pointer); when not said, from its latest back. `query` is `result` read to its end: `{ layer, found, stopped,
 nodeset }`, what every action gets today.
 
 ## The node set
