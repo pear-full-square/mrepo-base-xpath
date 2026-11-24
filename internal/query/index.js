@@ -3,8 +3,6 @@
 import { query as select } from 'mycelium-xpath'
 import { segmented, joined, stepsOf, isName, unslashed, uriFormOf, ROOT } from 'mycelium-uri'
 import { MAIN, SHORTCUTS, NODE, linkOf } from '../shortcut/index.js'
-// A layer's own config, at its root: not among its children.
-const LAYER = 'layer.json'
 
 // uri: as a request's form holds it, its segments, the layer first in what
 // they make together: ['main', "swarms/*[state='started']"], ['runtime/hooks'].
@@ -19,14 +17,9 @@ export async function query (exec, uri) {
     // a folder's listing, asked once a query: its children, and what is
     // hidden in it (its document, its shortcuts)
     const listings = new WeakMap()
-    // a layer's root: the tree a branch's name leads to. Its own config
-    // (layer.json) is the layer's, not its data: no child of it.
-    const roots = new WeakSet(root.type === 'tree' ? [root] : [])
     const listing = async node => {
       if (!listings.has(node)) {
-        const entries = (await exec.children(node)) ?? null
-        if (node.type === 'branches') for (const [, child] of entries ?? []) if (child.type === 'tree') roots.add(child)
-        listings.set(node, entries)
+        listings.set(node, (await exec.children(node)) ?? null)
       }
       return listings.get(node)
     }
@@ -47,7 +40,9 @@ export async function query (exec, uri) {
       return links.get(ref.path)
     }
     const tree = {
-      children: async node => (await listing(node))?.filter(([n]) => !n.startsWith('.') && !(n === LAYER && roots.has(node))) ?? null,
+      // (hidden: a name starting with a dot is no URI's: a node's document, its
+      // shortcuts, a layer's own config; by the name's rule, no name singled out)
+      children: async node => (await listing(node))?.filter(([n]) => !n.startsWith('.')) ?? null,
       // a folder's document is its hidden file; a file's is the file: JSON,
       // or its text when it is not that
       document: async (node, ref) => {

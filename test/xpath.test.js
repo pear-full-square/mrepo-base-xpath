@@ -21,7 +21,7 @@ function context (files, dir = '/work/mrepos/boot') {
   return exec
 }
 const files = () => ({
-  'main/layer.json': {},
+  'main/.layer.json': {},
   'main/.node.json': { name: 'boot' },
   'main/swarms/.node.json': {},
   'main/swarms/swarm-1/.node.json': { name: 'sam', size: 3, state: 'started', owner: { name: 'ann', publicKey: 'k1' } },
@@ -48,7 +48,7 @@ test('query: what a URI selects, each a reference with what it is', async (t) =>
   t.alike(at(await query(exec, ['main', '.'])), [['.', 'node']], 'main, the root position: the layer is a node')
   t.alike(at(await query(exec, ['main', 'swarms/swarm-1'])), [['swarms/swarm-1', 'node']], 'a node: a folder holding its document')
   t.alike(at(await query(exec, ['main', 'swarms/*'])), [['swarms/notes', 'folder'], ['swarms/swarm-1', 'node'], ['swarms/swarm-2', 'node']], 'a folder without a document is none; what is hidden is not selected')
-  t.alike(at(await query(exec, ['main', '*'])), [['empty', 'node'], ['host', 'node'], ['records', 'node'], ['swarms', 'node']], 'the layer\'s own config, layer.json at its root, is no child of it')
+  t.alike(at(await query(exec, ['main', '*'])), [['empty', 'node'], ['host', 'node'], ['records', 'node'], ['swarms', 'node']], 'the layer\'s own config, .layer.json at its root, is no child of it: hidden by its name')
   t.alike(at(await query(exec, ['main', 'swarms', 'swarm-1', '.'])), [['swarms/swarm-1', 'node']], 'written at a position: the segments together')
   t.alike(at(await query(exec, ['main', 'nowhere/x'])), [], 'nothing there: nothing')
   t.alike(await query(exec, ['help', 'x']), { layer: 'help', found: [], stopped: [] }, 'no such layer: nothing')
@@ -118,4 +118,10 @@ test('the paths: a shortcut\'s entry, a link\'s record, the unique URIs', (t) =>
   t.is(namespaceOf('haiccing/base-package-crud/howto/query/boot'), 'haiccing/base-package-crud/howto/query', 'a namespace a path: all but the name')
   t.is(namespaceOf('boot'), 'local', 'no namespace: local')
   t.is(uriOf('haiccing/base-package-crud/howto/query/boot', 'host'), 'haiccing/base-package-crud/howto/query/host', 'what a how-to\'s boot deploys: beside it, in its namespace')
+})
+
+test('query: hidden is the name\'s rule, a name starting with a dot; no name singled out', async (t) => {
+  const exec = context({ 'runtime/.layer.json': {}, 'runtime/layer.json': { not: 'a config' }, 'runtime/service.json': { state: 'booted' }, 'runtime/.other.json': {} })
+  const found = (await query(exec, ['runtime', '*'])).found.map(f => [f.at, f.kind])
+  t.alike(found, [['layer.json', 'file'], ['service.json', 'file']], 'a file named layer.json is data like any other; what starts with a dot is not selected, whatever it is')
 })

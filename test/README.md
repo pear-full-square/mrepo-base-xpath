@@ -9,3 +9,4 @@ The tests of mrepo-base-xpath, a section per file, each test by its name.
 - query: a shortcut: found as one, and where the URI stops
 - query: measured: its rounds through the context's step; a listing asked once
 - the paths: a shortcut's entry, a link's record, the unique URIs
+- query: hidden is the name's rule, a name starting with a dot; no name singled out
