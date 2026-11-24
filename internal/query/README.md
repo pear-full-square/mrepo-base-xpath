@@ -10,21 +10,14 @@ a shortcut is.
 ## The result
 
 `result(exec, uri, { mode })`: the URI's result as an iterator
-(`mycelium-xpath`'s `XPathResult` under it): `iterateNext()` the next
+(`mycelium-xpath`'s `XPathResult` and its `XPathIterator` under it): `iterateNext()` the next
 reference (`{ at, kind, node | value, shortcut? }`, `at` its logical
 address), `null` at the end; `take(n)`, `all()`; `stopped()` where it
-stopped at a shortcut so far; `nodeset()` its node set as data. Its
+stopped at a shortcut so far; `nodeset()` the result's metadata. Its
 slices are fetched as the reading needs them, each in the request's log
 (`batch`); a reader that takes a few and stops costs the slices that
-took. `slice()` its next slice, the references one answer carries.
-`query` is `result` read to its end: `{ layer, found, stopped,
-nodeset }`, what every action but a logical read of a topic gets today.
-
-`result(exec, uri, { mode, nodeset })`: given a node set's metadata
-(what an earlier answer carried), the result goes on from where that
-one has read to, under its id and fixed as it was: nothing is fixed
-again, nothing is kept here between two slices. A new node set's id is
-the request's that made it (`exec.id`).
+took. `query` is `result` read to its end: `{ layer, found, stopped,
+nodeset }`, what every action gets today.
 
 ## The node set
 
