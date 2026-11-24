@@ -39,7 +39,8 @@ says its structure type in its `.layer.json` (`structure`); none: a
 plain tree (`tree`), its one physical query the logical one. Read to
 its end by who wants all of it; `metadata()` says the result as data.
 
-`mode`: `physical` (when none is said) reads the
+`mode`: `physical` (when none is passed: what a command that
+writes addresses) reads the
 layer as it is stored. `logical` reads a topic as its records: the
 layer itself, or the first of the URI's plain leading names whose
 folder says a structure of records (`offset-files`); its node set fixed
@@ -52,7 +53,8 @@ way.
 `readingOf(exec)`: the mrepo's setting, how its topics are read where a
 command says nothing: `/runtime/xpath.json`, `{ "reading": "logical" }`
 or `"physical"`, a runtime config of its defining package's; none:
-`undefined` (physical).
+`undefined` (the reading is then logical: `mrepo-base-request`,
+`modeOf`).
 
 ## Signature
 
